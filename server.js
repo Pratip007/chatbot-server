@@ -25,7 +25,7 @@ const upload = multer({
 
 // CORS configuration
 const corsOptions = {
-  origin: ['http://localhost:4200', 'http://localhost:3000', 'http://localhost:8000','http://127.0.0.1:8000','https://support.urbanwealthcapitals.com/','*'],
+  origin: ['http://localhost:4200', 'http://localhost:3000', 'http://localhost:8000','http://127.0.0.1:8000','https://support.urbanwealthcapitals.com/','https://aitrades.urbanwealthcapitals.com/','https://admin.urbanwealthcapitals.com/ ','*'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
