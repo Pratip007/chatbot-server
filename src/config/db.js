@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
     try {
-        const conn = await mongoose.connect('mongodb://127.0.0.1:27017/?directConnection=true&serverSelectionTimeoutMS=2000&appName=mongosh+2.5.1/chatbot', {
+        const conn = await mongoose.connect('mongodb+srv://Pratip:Pratip@cluster0.hl0wqoy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0/chatbot', {
             useNewUrlParser: true,
             useUnifiedTopology: true
         });
