@@ -1,6 +1,7 @@
 const Chat = require('../models/Chat');
 const User = require('../models/User');
 const processMessage = require('./chatController').processMessage;
+const chatController = require('./chatController');
 
 // Store socket instance for use in controllers
 let io;
@@ -11,7 +12,7 @@ exports.setSocketIO = (socketIO) => {
 };
 
 // Import chat controller functions
-const chatController = require('./chatController');
+// const chatController = require('./chatController');
 
 exports.getAllUsers = async (req, res) => {
   try {
@@ -47,6 +48,8 @@ exports.getUser = async (req, res) => {
     res.status(500).json({ error: 'Error processing request' });
   }
 };
+
+// openChatbox function removed
 
 exports.handleChat = async (req, res) => {
   try {
@@ -158,15 +161,18 @@ exports.handleChat = async (req, res) => {
       hasFile: !!file
     });
 
-    // Create bot message object
-    const botMessageObj = {
-      content: botResponse.text,
-      timestamp: new Date(),
-      senderType: 'bot'
-    };
-    
-    // Add bot response
-    user.messages.push(botMessageObj);
+    // Only add bot response if bot is not silenced
+    if (botResponse) {
+      // Create bot message object
+      const botMessageObj = {
+        content: botResponse.text,
+        timestamp: new Date(),
+        senderType: 'bot'
+      };
+      
+      // Add bot response
+      user.messages.push(botMessageObj);
+    }
 
     await user.save();
     
@@ -184,22 +190,29 @@ exports.handleChat = async (req, res) => {
       // Emit to admin room
       io.to('admin').emit('message', { ...userSocketMessage, userId });
       
-      // Then, emit the bot response to the user
-      const botSocketMessage = {
-        _id: botMessageObj._id,
-        content: botMessageObj.content,
-        timestamp: botMessageObj.timestamp,
-        senderType: 'bot'
-      };
-      
-      // Emit to user's room
-      io.to(userId).emit('message', botSocketMessage);
-      console.log(`Emitted bot response to user ${userId}`);
+      // Only emit bot response if bot responded (not silenced)
+      if (botResponse) {
+        const botMessageObj = user.messages[user.messages.length - 1];
+        
+        // Then, emit the bot response to the user
+        const botSocketMessage = {
+          _id: botMessageObj._id,
+          content: botMessageObj.content,
+          timestamp: botMessageObj.timestamp,
+          senderType: 'bot'
+        };
+        
+        // Emit to user's room
+        io.to(userId).emit('message', botSocketMessage);
+        console.log(`Emitted bot response to user ${userId}`);
+      } else {
+        console.log(`Bot is silenced for user ${userId}, no bot response sent`);
+      }
     }
 
     res.json({
       userMessage: message || 'File uploaded',
-      botResponse: botResponse.text,
+      botResponse: botResponse ? botResponse.text : null,
       fileData: file ? messageObj.file.data : null,
       user: user
     });
@@ -262,6 +275,51 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Check if user should receive welcome message
+    const shouldSendWelcome = await chatController.shouldSendWelcomeMessage(userId);
+    
+    if (shouldSendWelcome) {
+      console.log(`Sending welcome message to user ${userId}`);
+      
+      // Create welcome message object
+      const welcomeMessageObj = {
+        content: chatController.WELCOME_MESSAGE,
+        timestamp: new Date(),
+        senderType: 'bot'
+      };
+      
+      // Add welcome message to user's messages
+      user.messages.push(welcomeMessageObj);
+      await user.save();
+      
+      // Get the saved message with its ID
+      const savedWelcomeMessage = user.messages[user.messages.length - 1];
+      
+      // Emit welcome message via socket if available
+      if (io) {
+        // Emit to user's room
+        io.to(userId).emit('message', {
+          _id: savedWelcomeMessage._id,
+          content: savedWelcomeMessage.content,
+          timestamp: savedWelcomeMessage.timestamp,
+          senderType: 'bot',
+          isWelcomeMessage: true
+        });
+        
+        // Also notify admins
+        io.to('admin').emit('message', {
+          _id: savedWelcomeMessage._id,
+          content: savedWelcomeMessage.content,
+          timestamp: savedWelcomeMessage.timestamp,
+          senderType: 'bot',
+          userId: userId,
+          isWelcomeMessage: true
+        });
+        
+        console.log(`Emitted welcome message to user ${userId} and admins`);
+      }
+    }
+
     res.json(user);
   } catch (error) {
     console.error('Error in getUserById:', error);
@@ -313,7 +371,7 @@ exports.updateMessage = async (req, res) => {
       io.to('admin').emit('messageUpdated', { ...updatedMessage, userId: user.userId });
     }
 
-    console.log("nxjcnjxncjnxjnvjnjvnjdnfjndjfnjdnfjn");
+    
     
     
     res.json({
@@ -439,5 +497,187 @@ exports.getUnreadMessageCounts = async (req, res) => {
   } catch (error) {
     console.error('Error getting unread message counts:', error);
     res.status(500).json({ error: 'Error getting unread message counts' });
+  }
+};
+
+// Delete all messages for a specific user
+exports.deleteAllUserMessages = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    // Find the user
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Store the count of messages before deletion
+    const messageCount = user.messages.length;
+
+    // Clear all messages for this user
+    user.messages = [];
+    await user.save();
+
+    // Emit socket event for real-time updates
+    if (io) {
+      const deleteEvent = {
+        userId,
+        action: 'allDeleted',
+        messageCount,
+        timestamp: new Date()
+      };
+      
+      // Emit to user's room
+      io.to(userId).emit('allMessagesDeleted', deleteEvent);
+      
+      // Also notify admins
+      io.to('admin').emit('allMessagesDeleted', deleteEvent);
+    }
+
+    res.json({
+      success: true,
+      message: `All ${messageCount} messages deleted successfully for user ${userId}`,
+      userId,
+      deletedCount: messageCount
+    });
+  } catch (error) {
+    console.error('Error in deleteAllUserMessages:', error);
+    res.status(500).json({ error: 'Error deleting all user messages' });
+  }
+};
+
+// Delete all messages for all users (admin only)
+exports.deleteAllMessages = async (req, res) => {
+  try {
+    const { adminId } = req.body;
+
+    if (!adminId) {
+      return res.status(400).json({ error: 'adminId is required for this operation' });
+    }
+
+    // Get count of all users and their messages before deletion
+    const users = await User.find({});
+    let totalMessageCount = 0;
+    const userCounts = [];
+
+    users.forEach(user => {
+      const count = user.messages.length;
+      totalMessageCount += count;
+      userCounts.push({ userId: user.userId, messageCount: count });
+    });
+
+    // Clear all messages for all users
+    await User.updateMany({}, { $set: { messages: [] } });
+
+    // Emit socket event for real-time updates
+    if (io) {
+      const deleteEvent = {
+        action: 'allMessagesAllUsers',
+        totalMessageCount,
+        userCounts,
+        adminId,
+        timestamp: new Date()
+      };
+      
+      // Notify all connected users
+      users.forEach(user => {
+        io.to(user.userId).emit('allMessagesDeleted', {
+          ...deleteEvent,
+          userId: user.userId
+        });
+      });
+      
+      // Also notify all admins
+      io.to('admin').emit('allMessagesDeleted', deleteEvent);
+    }
+
+    res.json({
+      success: true,
+      message: `All messages deleted successfully for all users`,
+      totalUsers: users.length,
+      totalMessagesDeleted: totalMessageCount,
+      userCounts,
+      adminId
+    });
+  } catch (error) {
+    console.error('Error in deleteAllMessages:', error);
+    res.status(500).json({ error: 'Error deleting all messages' });
+  }
+};
+
+// Enhanced message edit with validation and history
+exports.editMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { content, adminId, reason } = req.body;
+
+    if (!messageId || !content) {
+      return res.status(400).json({ error: 'messageId and content are required' });
+    }
+
+    // Find user with this message
+    const user = await User.findOne({ 'messages._id': messageId });
+    if (!user) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    // Find the specific message in the array
+    const messageIndex = user.messages.findIndex(msg => msg._id.toString() === messageId);
+    if (messageIndex === -1) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const originalMessage = user.messages[messageIndex];
+
+    // Store edit history
+    if (!originalMessage.editHistory) {
+      originalMessage.editHistory = [];
+    }
+
+    originalMessage.editHistory.push({
+      originalContent: originalMessage.content,
+      editedAt: new Date(),
+      editedBy: adminId || 'system',
+      reason: reason || 'No reason provided'
+    });
+
+    // Update the message content
+    originalMessage.content = content;
+    originalMessage.updatedAt = new Date();
+    originalMessage.isEdited = true;
+
+    await user.save();
+    
+    // Emit socket event for real-time updates
+    if (io) {
+      const updatedMessage = {
+        _id: messageId,
+        content: content,
+        updatedAt: originalMessage.updatedAt,
+        isEdited: true,
+        editHistory: originalMessage.editHistory,
+        action: 'edited'
+      };
+      
+      // Emit to user's room
+      io.to(user.userId).emit('messageEdited', updatedMessage);
+      
+      // Also notify admins
+      io.to('admin').emit('messageEdited', { ...updatedMessage, userId: user.userId });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Message edited successfully',
+      updatedMessage: originalMessage,
+      editHistory: originalMessage.editHistory
+    });
+  } catch (error) {
+    console.error('Error in editMessage:', error);
+    res.status(500).json({ error: 'Error editing message' });
   }
 }; 

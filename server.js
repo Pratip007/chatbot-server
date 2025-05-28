@@ -70,6 +70,11 @@ app.get('/api/chat/history/:userId', authController.getChatHistoryByParam);
 app.put('/api/chat/message/:messageId', authController.updateMessage);
 app.delete('/api/chat/message/:messageId', authController.deleteMessage);
 
+// New message management endpoints
+app.delete('/api/chat/messages/user/:userId', authController.deleteAllUserMessages);
+app.delete('/api/chat/messages/all', authController.deleteAllMessages);
+app.put('/api/chat/message/:messageId/edit', authController.editMessage);
+
 // Message read status endpoints
 app.put('/api/chat/read/:userId', authController.markMessagesAsRead);
 app.put('/api/chat/read/message/:messageId', authController.markMessageAsRead);
@@ -85,7 +90,7 @@ io.on('connection', (socket) => {
   console.log('New client connected', socket.id);
 
   // Handle client joining specific user or admin rooms
-  socket.on('join', (data) => {
+  socket.on('join', async (data) => {
     // Clean up - leave all rooms except own socket ID room
     const socketRooms = Array.from(socket.rooms);
     socketRooms.forEach(room => {
@@ -144,7 +149,18 @@ io.on('connection', (socket) => {
             _id: savedMessage._id,
             content: savedMessage.content,
             timestamp: savedMessage.timestamp,
-            senderType: 'admin'
+            senderType: 'admin',
+            senderId: savedMessage.senderId
+          });
+          
+          // Also emit to admin room for confirmation
+          io.to('admin').emit('message', {
+            _id: savedMessage._id,
+            content: savedMessage.content,
+            timestamp: savedMessage.timestamp,
+            senderType: 'admin',
+            senderId: savedMessage.senderId,
+            userId: message.userId
           });
           
           console.log(`Emitted admin message to user ${message.userId}`);
@@ -164,9 +180,6 @@ io.on('connection', (socket) => {
         senderType: 'user'
       });
       
-      // Add senderType: 'bot' for the client UI
-      botResponse.senderType = 'bot';
-      
       // Save the message to database
       const user = await mongoose.model('User').findOne({ userId: message.userId });
       
@@ -179,43 +192,78 @@ io.on('connection', (socket) => {
         };
         user.messages.push(userMessageObj);
         
-        // Save bot message
-        const botMessageObj = {
-          content: botResponse.text,
-          timestamp: new Date(),
-          senderType: 'bot'
-        };
-        user.messages.push(botMessageObj);
-        
-        await user.save();
-        
-        // Emit the saved messages with their IDs
-        const savedUserMessage = user.messages[user.messages.length - 2];
-        const savedBotMessage = user.messages[user.messages.length - 1];
-        
-        // Emit to users room
-        io.to(message.userId).emit('message', {
-          _id: savedUserMessage._id,
-          content: savedUserMessage.content,
-          timestamp: savedUserMessage.timestamp,
-          senderType: 'user'
-        });
-        
-        io.to(message.userId).emit('message', {
-          _id: savedBotMessage._id,
-          content: savedBotMessage.content,
-          timestamp: savedBotMessage.timestamp,
-          senderType: 'bot'
-        });
-        
-        // Also emit to admin room
-        io.to('admin').emit('message', {
-          _id: savedUserMessage._id,
-          content: savedUserMessage.content,
-          timestamp: savedUserMessage.timestamp,
-          senderType: 'user',
-          userId: message.userId
-        });
+        // Only save and emit bot message if bot responded (not silenced)
+        if (botResponse) {
+          // Save bot message
+          const botMessageObj = {
+            content: botResponse.text,
+            timestamp: new Date(),
+            senderType: 'bot'
+          };
+          user.messages.push(botMessageObj);
+          
+          await user.save();
+          
+          // Emit the saved messages with their IDs
+          const savedUserMessage = user.messages[user.messages.length - 2];
+          const savedBotMessage = user.messages[user.messages.length - 1];
+          
+          // Emit user message to users room
+          io.to(message.userId).emit('message', {
+            _id: savedUserMessage._id,
+            content: savedUserMessage.content,
+            timestamp: savedUserMessage.timestamp,
+            senderType: 'user'
+          });
+          
+          // Emit bot message to users room
+          io.to(message.userId).emit('message', {
+            _id: savedBotMessage._id,
+            content: savedBotMessage.content,
+            timestamp: savedBotMessage.timestamp,
+            senderType: 'bot'
+          });
+          
+          // Also emit user message to admin room
+          io.to('admin').emit('message', {
+            _id: savedUserMessage._id,
+            content: savedUserMessage.content,
+            timestamp: savedUserMessage.timestamp,
+            senderType: 'user',
+            userId: message.userId
+          });
+          
+          // Also emit bot message to admin room
+          io.to('admin').emit('message', {
+            _id: savedBotMessage._id,
+            content: savedBotMessage.content,
+            timestamp: savedBotMessage.timestamp,
+            senderType: 'bot',
+            userId: message.userId
+          });
+        } else {
+          // Bot is silenced, only save and emit user message
+          await user.save();
+          
+          const savedUserMessage = user.messages[user.messages.length - 1];
+          
+          // Emit user message to users room
+          io.to(message.userId).emit('message', {
+            _id: savedUserMessage._id,
+            content: savedUserMessage.content,
+            timestamp: savedUserMessage.timestamp,
+            senderType: 'user'
+          });
+          
+          // Also emit user message to admin room
+          io.to('admin').emit('message', {
+            _id: savedUserMessage._id,
+            content: savedUserMessage.content,
+            timestamp: savedUserMessage.timestamp,
+            senderType: 'user',
+            userId: message.userId
+          });
+        }
       }
     } catch (error) {
       console.error('Error processing socket message:', error);
@@ -285,6 +333,140 @@ io.on('connection', (socket) => {
       console.error('Error marking message as read via socket:', error);
       socket.emit('error', {
         message: 'Error marking message as read'
+      });
+    }
+  });
+
+  // Handle deleting all messages for a specific user
+  socket.on('deleteAllUserMessages', async (data) => {
+    try {
+      console.log('Deleting all messages for user via socket:', data);
+      
+      if (!data.userId) {
+        socket.emit('error', { message: 'userId is required' });
+        return;
+      }
+      
+      const authController = require('./src/controllers/authController');
+      
+      // Create a mock request/response for the controller
+      const mockReq = { params: { userId: data.userId } };
+      const mockRes = {
+        json: (result) => {
+          if (result.success) {
+            // Emit to user's room
+            io.to(data.userId).emit('allMessagesDeleted', {
+              userId: data.userId,
+              action: 'allDeleted',
+              messageCount: result.deletedCount,
+              timestamp: new Date()
+            });
+            
+            // Also notify admins
+            io.to('admin').emit('allMessagesDeleted', {
+              userId: data.userId,
+              action: 'allDeleted',
+              messageCount: result.deletedCount,
+              timestamp: new Date()
+            });
+            
+            socket.emit('deleteAllUserMessagesResult', result);
+          } else {
+            socket.emit('error', { message: 'Failed to delete messages' });
+          }
+        },
+        status: (code) => ({ json: (error) => socket.emit('error', error) })
+      };
+      
+      await authController.deleteAllUserMessages(mockReq, mockRes);
+    } catch (error) {
+      console.error('Error deleting all user messages via socket:', error);
+      socket.emit('error', {
+        message: 'Error deleting all user messages'
+      });
+    }
+  });
+
+  // Handle deleting all messages for all users (admin only)
+  socket.on('deleteAllMessages', async (data) => {
+    try {
+      console.log('Deleting all messages for all users via socket:', data);
+      
+      if (!data.adminId) {
+        socket.emit('error', { message: 'adminId is required for this operation' });
+        return;
+      }
+      
+      const authController = require('./src/controllers/authController');
+      
+      // Create a mock request/response for the controller
+      const mockReq = { body: { adminId: data.adminId } };
+      const mockRes = {
+        json: (result) => {
+          if (result.success) {
+            // Notify all users and admins
+            io.emit('allMessagesDeleted', {
+              action: 'allMessagesAllUsers',
+              totalMessageCount: result.totalMessagesDeleted,
+              userCounts: result.userCounts,
+              adminId: data.adminId,
+              timestamp: new Date()
+            });
+            
+            socket.emit('deleteAllMessagesResult', result);
+          } else {
+            socket.emit('error', { message: 'Failed to delete all messages' });
+          }
+        },
+        status: (code) => ({ json: (error) => socket.emit('error', error) })
+      };
+      
+      await authController.deleteAllMessages(mockReq, mockRes);
+    } catch (error) {
+      console.error('Error deleting all messages via socket:', error);
+      socket.emit('error', {
+        message: 'Error deleting all messages'
+      });
+    }
+  });
+
+  // Handle editing a message
+  socket.on('editMessage', async (data) => {
+    try {
+      console.log('Editing message via socket:', data);
+      
+      if (!data.messageId || !data.content) {
+        socket.emit('error', { message: 'messageId and content are required' });
+        return;
+      }
+      
+      const authController = require('./src/controllers/authController');
+      
+      // Create a mock request/response for the controller
+      const mockReq = { 
+        params: { messageId: data.messageId },
+        body: { 
+          content: data.content, 
+          adminId: data.adminId,
+          reason: data.reason 
+        }
+      };
+      const mockRes = {
+        json: (result) => {
+          if (result.success) {
+            socket.emit('editMessageResult', result);
+          } else {
+            socket.emit('error', { message: 'Failed to edit message' });
+          }
+        },
+        status: (code) => ({ json: (error) => socket.emit('error', error) })
+      };
+      
+      await authController.editMessage(mockReq, mockRes);
+    } catch (error) {
+      console.error('Error editing message via socket:', error);
+      socket.emit('error', {
+        message: 'Error editing message'
       });
     }
   });

@@ -12,6 +12,10 @@ const messageSchema = new mongoose.Schema({
         required: true,
         default: 'user'
     },
+    senderId: {
+        type: String,
+        default: null
+    },
     file: {
         filename: String,
         originalname: String,
@@ -24,7 +28,20 @@ const messageSchema = new mongoose.Schema({
         default: false
     },
     deletedAt: Date,
-    updatedAt: Date
+    updatedAt: Date,
+    isEdited: {
+        type: Boolean,
+        default: false
+    },
+    editHistory: [{
+        originalContent: String,
+        editedAt: {
+            type: Date,
+            default: Date.now
+        },
+        editedBy: String,
+        reason: String
+    }]
 });
 
 const userSchema = new mongoose.Schema({
@@ -37,11 +54,12 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    lastWelcomeDate: {
+        type: String, // Store as date string (YYYY-MM-DD format)
+        default: null
+    },
     messages: [messageSchema]
 }, { timestamps: true });
-
-// Drop all indexes and recreate only the ones we need
-userSchema.index({ userId: 1 }, { unique: true });
 
 const User = mongoose.model('User', userSchema);
 
