@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 // Simple response mapping for common queries
 const responseMap = {
   'hello': 'Hello! Welcome to Cortex AI, How may I assist you today?',
-  'hi': 'Hi there! How may I assist you?',
+  'hi': 'Hi there! Welcome to Coretx AI Customer Care! We are here to assist you. Please let us know how we can serve you better.',
   'help': 'I can help you with:\n1. Account Status\n2. KYC \n3. Deposit&Withdrawals\n4. Technical support\nWhat would you like to know?',
   'bye': 'Thank you for chatting with us. Have a great day!',
   'thanks': 'You\'re welcome! Is there anything else I can help you with?'
@@ -15,7 +15,7 @@ const responseMap = {
 const userSessions = new Map();
 
 // Welcome message that appears once per day
-const WELCOME_MESSAGE = 'Welcome to Cortex AI Customer Care! We\'re here to assist you. Please let us know how we can serve you better.';
+const WELCOME_MESSAGE = 'Welcome to Coretx AI Customer Care! We\'re here to assist you. Please let us know how we can serve you better.';
 
 // Queue message that silences bot for 30 minutes
 const QUEUE_MESSAGE = 'You\'re in the queue. Please wait patiently while we connect you with a live customer care agent. We appreciate your patience.';
@@ -56,6 +56,27 @@ exports.processMessage = async (message) => {
     if (isBotSilenced(userId)) {
       // Bot is silenced, don't respond
       return null;
+    }
+
+    // Check if user should receive welcome message first
+    const shouldWelcome = await shouldSendWelcomeMessage(userId);
+    
+    if (shouldWelcome) {
+      // Save the chat to database with welcome message
+      const chat = new Chat({
+        message: message.text,
+        response: WELCOME_MESSAGE,
+        userId: userId,
+        senderType: message.senderType || 'user',
+        isRead: false
+      });
+      await chat.save();
+
+      return {
+        text: WELCOME_MESSAGE,
+        timestamp: new Date(),
+        senderType: 'bot'
+      };
     }
 
     // If a file is received, reply with a special message
@@ -235,8 +256,20 @@ const silenceBotFor30Minutes = (userId) => {
 // Helper function to check if user should receive welcome message
 const shouldSendWelcomeMessage = async (userId) => {
   try {
-    const user = await User.findOne({ userId });
+    let user = await User.findOne({ userId });
+    
     if (!user) {
+      // Create new user if they don't exist
+      const now = new Date();
+      const today = now.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+      
+      user = await User.create({
+        userId,
+        username: `User_${userId}`, // Default username
+        messages: [],
+        lastWelcomeDate: today // Set today as the welcome date
+      });
+      console.log('Created new user:', userId, 'with lastWelcomeDate:', today);
       return true; // New user should get welcome message
     }
     
@@ -252,6 +285,7 @@ const shouldSendWelcomeMessage = async (userId) => {
       );
       return true;
     }
+    
     return false;
   } catch (error) {
     console.error('Error checking welcome message status:', error);

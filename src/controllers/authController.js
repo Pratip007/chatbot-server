@@ -275,51 +275,6 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Check if user should receive welcome message
-    const shouldSendWelcome = await chatController.shouldSendWelcomeMessage(userId);
-    
-    if (shouldSendWelcome) {
-      console.log(`Sending welcome message to user ${userId}`);
-      
-      // Create welcome message object
-      const welcomeMessageObj = {
-        content: chatController.WELCOME_MESSAGE,
-        timestamp: new Date(),
-        senderType: 'bot'
-      };
-      
-      // Add welcome message to user's messages
-      user.messages.push(welcomeMessageObj);
-      await user.save();
-      
-      // Get the saved message with its ID
-      const savedWelcomeMessage = user.messages[user.messages.length - 1];
-      
-      // Emit welcome message via socket if available
-      if (io) {
-        // Emit to user's room
-        io.to(userId).emit('message', {
-          _id: savedWelcomeMessage._id,
-          content: savedWelcomeMessage.content,
-          timestamp: savedWelcomeMessage.timestamp,
-          senderType: 'bot',
-          isWelcomeMessage: true
-        });
-        
-        // Also notify admins
-        io.to('admin').emit('message', {
-          _id: savedWelcomeMessage._id,
-          content: savedWelcomeMessage.content,
-          timestamp: savedWelcomeMessage.timestamp,
-          senderType: 'bot',
-          userId: userId,
-          isWelcomeMessage: true
-        });
-        
-        console.log(`Emitted welcome message to user ${userId} and admins`);
-      }
-    }
-
     res.json(user);
   } catch (error) {
     console.error('Error in getUserById:', error);
