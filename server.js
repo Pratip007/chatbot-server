@@ -33,7 +33,8 @@ const corsOptions = {
     'https://support.urbanwealthcapitals.com',
     'https://aitrades.urbanwealthcapitals.com',
     'https://admin.urbanwealthcapitals.com',
-    'https://api.urbanwealthcapitals.com'
+    'https://api.urbanwealthcapitals.com',
+    'https://chat.urbanwealthcapitals.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -55,6 +56,12 @@ authController.setSocketIO(io);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Debug middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.get('Origin')}`);
+  next();
+});
+
 // Connect to MongoDB
 connectDB();
 
@@ -65,6 +72,12 @@ app.post('/api/user', authController.getUser);
 app.post('/api/chat', upload.single('file'), authController.handleChat);
 app.post('/api/chat/history', authController.getChatHistory);
 app.get('/api/chat/history/:userId', authController.getChatHistoryByParam);
+
+// Alternative routes without /api prefix for frontend compatibility
+app.post('/chat', upload.single('file'), authController.handleChat);
+app.post('/user', authController.getUser);
+app.post('/chat/history', authController.getChatHistory);
+app.get('/chat/history/:userId', authController.getChatHistoryByParam);
 
 // Message update/delete endpoints
 app.put('/api/chat/message/:messageId', authController.updateMessage);
@@ -83,6 +96,24 @@ app.get('/api/chat/unread-counts', authController.getUnreadMessageCounts);
 // Basic route
 app.get('/', (req, res) => {
     res.send('Chatbot API is running');
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        timestamp: new Date().toISOString(),
+        message: 'Chatbot API is healthy'
+    });
+});
+
+// CORS test endpoint
+app.get('/cors-test', (req, res) => {
+    res.json({ 
+        message: 'CORS is working',
+        origin: req.get('Origin'),
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Socket.io connection handling
