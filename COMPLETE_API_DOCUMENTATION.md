@@ -194,7 +194,7 @@ Sends a message to the chatbot and receives a response.
 ```
 
 **With File Upload:**
-- `file`: File attachment (max 5MB)
+- `file`: File attachment (max 10MB)
 - `text`: Message text
 - `userId`: User ID
 - `sessionId`: Session ID
@@ -590,7 +590,7 @@ socket.on('error', (data) => {
 ### Supported File Types
 - Images: JPEG, PNG, GIF, WebP, HEIC
 - Documents: PDF, DOC, DOCX, TXT
-- Maximum file size: 5MB
+- Maximum file size: 10MB
 
 ### File Storage
 Files are stored as base64 encoded strings in the database with metadata:
@@ -669,7 +669,7 @@ Chatbot API is running
 #### File Upload Errors
 ```json
 {
-  "error": "File size too large. Maximum size is 5MB."
+  "error": "File size too large. Maximum size is 10MB."
 }
 ```
 
@@ -754,7 +754,7 @@ console.log('Response with file:', data);
 ### Best Practices
 1. **Use WebSockets for real-time communication** instead of polling
 2. **Implement proper error handling** for all API calls
-3. **Validate file sizes** before uploading (max 5MB)
+3. **Validate file sizes** before uploading (max 10MB)
 4. **Use appropriate content types** for requests
 5. **Handle connection drops** gracefully in WebSocket implementations
 6. **Store session IDs** for conversation continuity
