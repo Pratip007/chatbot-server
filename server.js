@@ -32,7 +32,7 @@ const corsOptions = {
     'http://127.0.0.1:8000',
     'https://support.urbanwealthcapitals.com',
     'https://aitrades.urbanwealthcapitals.com',
-    'https://admin.urbanwealthcapitals.com',
+    'https://adminchat.urbanwealthcapitals.com',
     'https://api.urbanwealthcapitals.com',
     'https://chat.urbanwealthcapitals.com'
   ],
