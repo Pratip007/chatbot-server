@@ -85,26 +85,15 @@ exports.handleChat = async (req, res) => {
       
       // Add file information if a file was uploaded
       if (file) {
-        try {
-          // Read file from disk and convert to base64
-          const fs = require('fs');
-          const fileBuffer = fs.readFileSync(file.path);
-          const base64Data = fileBuffer.toString('base64');
-          
-          adminMessageObj.file = {
-            filename: file.filename,
-            originalname: file.originalname,
-            mimetype: file.mimetype,
-            size: file.size,
-            data: `data:${file.mimetype};base64,${base64Data}`
-          };
-          
-          // Clean up the temporary file
-          fs.unlinkSync(file.path);
-        } catch (fileError) {
-          console.error('Error processing uploaded file:', fileError);
-          // Continue without file if there's an error
-        }
+        // Convert buffer to base64
+        const base64Data = file.buffer.toString('base64');
+        adminMessageObj.file = {
+          filename: file.originalname,
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          data: `data:${file.mimetype};base64,${base64Data}`
+        };
       }
       
       user.messages.push(adminMessageObj);
@@ -151,26 +140,15 @@ exports.handleChat = async (req, res) => {
 
     // Add file information if a file was uploaded
     if (file) {
-      try {
-        // Read file from disk and convert to base64
-        const fs = require('fs');
-        const fileBuffer = fs.readFileSync(file.path);
-        const base64Data = fileBuffer.toString('base64');
-        
-        messageObj.file = {
-          filename: file.filename,
-          originalname: file.originalname,
-          mimetype: file.mimetype,
-          size: file.size,
-          data: `data:${file.mimetype};base64,${base64Data}`
-        };
-        
-        // Clean up the temporary file
-        fs.unlinkSync(file.path);
-      } catch (fileError) {
-        console.error('Error processing uploaded file:', fileError);
-        // Continue without file if there's an error
-      }
+      // Convert buffer to base64
+      const base64Data = file.buffer.toString('base64');
+      messageObj.file = {
+        filename: file.originalname,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        data: `data:${file.mimetype};base64,${base64Data}`
+      };
     }
 
     // Add user message

@@ -6,7 +6,6 @@ const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 const multer = require('multer');
 const authController = require('./src/controllers/authController');
 const processMessage = require('./src/controllers/chatController').processMessage;
@@ -15,27 +14,12 @@ const connectDB = require('./src/config/db');
 const app = express();
 const server = http.createServer(app);
 
-// Configure multer for disk storage to handle large files without memory issues
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads');
-    // Create uploads directory if it doesn't exist
-    if (!require('fs').existsSync(uploadDir)) {
-      require('fs').mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    // Generate unique filename with timestamp and random string
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit (reduced from 50MB for stability)
+    fileSize: 5 * 1024 * 1024 // 5MB limit
   }
 });
 
@@ -48,6 +32,9 @@ const corsOptions = {
     'http://127.0.0.1:8000',
     'https://support.urbanwealthcapitals.com',
     'https://aitrades.urbanwealthcapitals.com',
+    'https://aitrading.cortexneuralink.com',
+    'https://support.cortexneuralink.com',
+    'https://admin.cortexneuralink.com',
     'https://adminchat.urbanwealthcapitals.com',
     'https://api.urbanwealthcapitals.com',
     'https://chat.urbanwealthcapitals.com'
@@ -69,19 +56,12 @@ const io = socketIo(server, {
 authController.setSocketIO(io);
 
 // Middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Debug middleware to log all requests
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.get('Origin')}`);
-  
-  // Log memory usage for file uploads
-  if (req.path.includes('/chat') && req.method === 'POST') {
-    const memUsage = process.memoryUsage();
-    console.log(`Memory usage before request: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`);
-  }
-  
   next();
 });
 
@@ -535,55 +515,14 @@ io.on('connection', (socket) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  
-  // Clean up any uploaded file if there was an error
-  if (req.file && req.file.path) {
-    try {
-      fs.unlinkSync(req.file.path);
-      console.log('Cleaned up uploaded file after error:', req.file.filename);
-    } catch (cleanupError) {
-      console.error('Error cleaning up file:', cleanupError);
-    }
-  }
-  
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size too large. Maximum size is 10MB.' });
+      return res.status(400).json({ error: 'File size too large. Maximum size is 5MB.' });
     }
     return res.status(400).json({ error: err.message });
   }
   res.status(500).json({ error: 'Something went wrong!' });
 });
-
-// Cleanup function for orphaned files (run periodically)
-const cleanupOrphanedFiles = () => {
-  const uploadDir = path.join(__dirname, 'uploads');
-  if (fs.existsSync(uploadDir)) {
-    fs.readdir(uploadDir, (err, files) => {
-      if (err) return;
-      
-      const now = Date.now();
-      files.forEach(file => {
-        const filePath = path.join(uploadDir, file);
-        fs.stat(filePath, (err, stats) => {
-          if (err) return;
-          
-          // Delete files older than 1 hour
-          if (now - stats.mtime.getTime() > 60 * 60 * 1000) {
-            fs.unlink(filePath, (err) => {
-              if (!err) {
-                console.log('Cleaned up orphaned file:', file);
-              }
-            });
-          }
-        });
-      });
-    });
-  }
-};
-
-// Run cleanup every 30 minutes
-setInterval(cleanupOrphanedFiles, 30 * 60 * 1000);
 
 // Port configuration
 const PORT = 5000;
