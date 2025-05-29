@@ -78,6 +78,8 @@ app.post('/chat', upload.single('file'), authController.handleChat);
 app.post('/user', authController.getUser);
 app.post('/chat/history', authController.getChatHistory);
 app.get('/chat/history/:userId', authController.getChatHistoryByParam);
+app.get('/users/:userId', authController.getUserById);
+app.get('/users', authController.getAllUsers);
 
 // Message update/delete endpoints
 app.put('/api/chat/message/:messageId', authController.updateMessage);
