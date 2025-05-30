@@ -635,4 +635,173 @@ exports.editMessage = async (req, res) => {
     console.error('Error in editMessage:', error);
     res.status(500).json({ error: 'Error editing message' });
   }
+};
+
+// Delete a specific user (Admin only)
+exports.deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { adminId } = req.body;
+
+    console.log(`Delete user request - User: ${userId}, Admin: ${adminId}`);
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    if (!adminId) {
+      return res.status(400).json({ error: 'adminId is required for this operation' });
+    }
+
+    // Find the user to delete
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Store user info for logging and response
+    const userInfo = {
+      userId: user.userId,
+      username: user.username,
+      messageCount: user.messages.length,
+      createdAt: user.createdAt,
+      deletedAt: new Date(),
+      deletedBy: adminId
+    };
+
+    // Delete the user
+    await User.deleteOne({ userId });
+
+    // Emit socket events for real-time updates
+    if (io) {
+      const deleteEvent = {
+        userId,
+        username: user.username,
+        action: 'userDeleted',
+        deletedBy: adminId,
+        timestamp: new Date()
+      };
+      
+      // Notify the user (if connected) that their account is being deleted
+      io.to(userId).emit('accountDeleted', {
+        message: 'Your account has been deleted by an administrator',
+        timestamp: new Date()
+      });
+      
+      // Disconnect the user
+      const userSockets = io.sockets.adapter.rooms.get(userId);
+      if (userSockets) {
+        userSockets.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.disconnect(true);
+          }
+        });
+      }
+      
+      // Notify all admins
+      io.to('admin').emit('userDeleted', deleteEvent);
+    }
+
+    console.log(`User deleted successfully:`, userInfo);
+
+    res.json({
+      success: true,
+      message: `User ${user.username} (${userId}) deleted successfully`,
+      deletedUser: userInfo
+    });
+  } catch (error) {
+    console.error('Error in deleteUser:', error);
+    res.status(500).json({ error: 'Error deleting user' });
+  }
+};
+
+// Delete all users (Admin only with confirmation)
+exports.deleteAllUsers = async (req, res) => {
+  try {
+    const { adminId, confirmationCode } = req.body;
+
+    console.log(`Delete all users request - Admin: ${adminId}, Confirmation: ${confirmationCode}`);
+
+    if (!adminId) {
+      return res.status(400).json({ error: 'adminId is required for this operation' });
+    }
+
+    if (confirmationCode !== 'DELETE_ALL_USERS_CONFIRMED') {
+      return res.status(400).json({ 
+        error: 'Invalid confirmation code. This operation requires explicit confirmation.',
+        requiredCode: 'DELETE_ALL_USERS_CONFIRMED'
+      });
+    }
+
+    // Get all users before deletion for logging
+    const users = await User.find({});
+    const userCount = users.length;
+    let totalMessageCount = 0;
+
+    const deletedUsers = users.map(user => {
+      totalMessageCount += user.messages.length;
+      return {
+        userId: user.userId,
+        username: user.username,
+        messageCount: user.messages.length,
+        createdAt: user.createdAt
+      };
+    });
+
+    // Delete all users
+    await User.deleteMany({});
+
+    // Emit socket events for real-time updates
+    if (io) {
+      const deleteEvent = {
+        action: 'allUsersDeleted',
+        deletedBy: adminId,
+        userCount,
+        totalMessageCount,
+        timestamp: new Date()
+      };
+      
+      // Notify all connected users that their accounts are being deleted
+      users.forEach(user => {
+        io.to(user.userId).emit('accountDeleted', {
+          message: 'All user accounts have been deleted by an administrator',
+          timestamp: new Date()
+        });
+        
+        // Disconnect all user sockets
+        const userSockets = io.sockets.adapter.rooms.get(user.userId);
+        if (userSockets) {
+          userSockets.forEach(socketId => {
+            const socket = io.sockets.sockets.get(socketId);
+            if (socket) {
+              socket.disconnect(true);
+            }
+          });
+        }
+      });
+      
+      // Notify all admins
+      io.to('admin').emit('allUsersDeleted', deleteEvent);
+    }
+
+    console.log(`All users deleted successfully by admin ${adminId}:`, {
+      userCount,
+      totalMessageCount,
+      deletedAt: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: `All ${userCount} users deleted successfully`,
+      deletedUsers,
+      totalUsers: userCount,
+      totalMessagesDeleted: totalMessageCount,
+      deletedBy: adminId,
+      deletedAt: new Date()
+    });
+  } catch (error) {
+    console.error('Error in deleteAllUsers:', error);
+    res.status(500).json({ error: 'Error deleting all users' });
+  }
 }; 

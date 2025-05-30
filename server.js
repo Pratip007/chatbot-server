@@ -98,6 +98,14 @@ app.put('/api/chat/read/:userId', authController.markMessagesAsRead);
 app.put('/api/chat/read/message/:messageId', authController.markMessageAsRead);
 app.get('/api/chat/unread-counts', authController.getUnreadMessageCounts);
 
+// User deletion endpoints (Admin only)
+app.delete('/api/users/:userId', authController.deleteUser);
+app.delete('/api/users/all', authController.deleteAllUsers);
+
+// Alternative routes without /api prefix for compatibility
+app.delete('/users/:userId', authController.deleteUser);
+app.delete('/users/all', authController.deleteAllUsers);
+
 // Basic route
 app.get('/', (req, res) => {
     res.send('Chatbot API is running');

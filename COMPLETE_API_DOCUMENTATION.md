@@ -171,6 +171,91 @@ Creates a new user or returns existing user information.
 }
 ```
 
+### Delete User (Admin Only)
+**DELETE** `/api/users/:userId`
+
+Deletes a specific user and all their messages. Requires admin authorization.
+
+**Parameters:**
+- `userId` (URL parameter): The ID of the user to delete
+
+**Request Body:**
+```json
+{
+  "adminId": "admin123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User john_doe (user123) deleted successfully",
+  "deletedUser": {
+    "userId": "user123",
+    "username": "john_doe",
+    "messageCount": 45,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "deletedAt": "2024-01-20T14:25:30.000Z",
+    "deletedBy": "admin123"
+  }
+}
+```
+
+**Error Responses:**
+- `400`: Missing userId or adminId
+- `404`: User not found
+- `500`: Server error
+
+### Delete All Users (Admin Only)
+**DELETE** `/api/users/all`
+
+Deletes ALL users and their messages. Requires admin authorization and explicit confirmation.
+
+**Request Body:**
+```json
+{
+  "adminId": "admin123",
+  "confirmationCode": "DELETE_ALL_USERS_CONFIRMED"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "All 25 users deleted successfully",
+  "deletedUsers": [
+    {
+      "userId": "user1",
+      "username": "john_doe",
+      "messageCount": 45,
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    },
+    {
+      "userId": "user2",
+      "username": "jane_smith",
+      "messageCount": 32,
+      "createdAt": "2024-01-16T09:15:00.000Z"
+    }
+  ],
+  "totalUsers": 25,
+  "totalMessagesDeleted": 1250,
+  "deletedBy": "admin123",
+  "deletedAt": "2024-01-20T14:25:30.000Z"
+}
+```
+
+**Error Responses:**
+- `400`: Missing adminId or invalid confirmation code
+- `500`: Server error
+
+**Security Notes:**
+- These operations are irreversible without database backups
+- Users are automatically notified and disconnected when deleted
+- All operations are logged with admin tracking
+- Real-time socket events notify connected admin clients
+
 ---
 
 ## Chat & Messaging
